@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRI · Print Studio</title>
+<meta name="description" content="TRI is a real Tripo 3D model, printed live in your browser as a riso zine. Spin her, peel back the quads and the rig, make her dance.">
+<script>
+  // the engine reads its print style from ?style= at import time: default to A (fine print)
+  (() => { const q = new URLSearchParams(location.search); if (!q.get("style")) { q.set("style", "fine"); history.replaceState(null, "", "?" + q + location.hash); } })();
+</script>
+<style>
+  @font-face { font-family: "JetBrains Mono"; src: url("../engine/fonts/JetBrainsMono[wght].ttf"); font-weight: 100 800; }
+  @font-face { font-family: "Anton"; src: url("../engine/fonts/Anton-Regular.ttf"); }
+  :root { --paper: #F3EEE3; --ink: #1B1A1F; --yellow: #F8CF00; --pink: #FF48B0; --blue: #2F5BFF; --muted: #6d6860; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font: 500 15px/1.5 "JetBrains Mono", ui-monospace, monospace; }
+  a { color: var(--blue); }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px 6px; max-width: 1280px; margin: 0 auto; }
+  header h1 { font: 400 clamp(26px, 4vw, 40px)/1 "Anton", sans-serif; letter-spacing: .5px; margin: 0; }
+  header h1 span { color: var(--pink); }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .stage { position: relative; max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border: 3px solid var(--ink); background: var(--paper); touch-action: none; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  .hint { position: absolute; right: 30px; bottom: 12px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; max-width: 1280px; margin: 12px auto 0; padding: 0 16px; }
+  .group { display: flex; gap: 0; border: 3px solid var(--ink); }
+  button { font: 700 14px/1 "JetBrains Mono", monospace; letter-spacing: .5px; text-transform: uppercase; padding: 11px 14px; border: 0; background: var(--paper); color: var(--ink); cursor: pointer; }
+  .group button + button { border-left: 3px solid var(--ink); }
+  button[aria-pressed="true"] { background: var(--yellow); }
+  button.dance[aria-pressed="true"] { background: var(--pink); color: var(--paper); }
+  button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  .solo { border: 3px solid var(--ink); }
+  main { max-width: 1280px; margin: 0 auto; padding: 8px 16px 48px; }
+  section { margin-top: 44px; }
+  h2 { font: 400 clamp(22px, 3vw, 30px)/1.1 "Anton", sans-serif; margin: 0 0 12px; }
+  .videos { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .videos figure { margin: 0; }
+  video { width: 100%; border: 3px solid var(--ink); background: var(--ink); display: block; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  ol.pipe { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  ol.pipe li { border: 3px solid var(--ink); padding: 12px; background: #FBF8F1; }
+  ol.pipe b { display: block; font-size: 13px; color: var(--pink); margin-bottom: 4px; }
+  .board { width: 100%; border: 3px solid var(--ink); margin-top: 16px; display: block; }
+  .credits { font-size: 13px; color: var(--muted); }
+  #intro { position: fixed; inset: 0; background: rgba(243, 238, 227, .96); display: grid; place-items: center; z-index: 10; padding: 16px; }
+  #intro .card { max-width: 620px; border: 3px solid var(--ink); background: #FBF8F1; padding: 28px; }
+  #intro h2 { font-size: clamp(30px, 5vw, 44px); }
+  #intro .gift { font-family: "Anton", sans-serif; font-size: clamp(20px, 3vw, 26px); color: var(--pink); margin: 0 0 14px; }
+  #intro .bar { height: 10px; border: 3px solid var(--ink); margin: 18px 0 14px; }
+  #intro .bar i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .2s; }
+  #enter { background: var(--yellow); border: 3px solid var(--ink); font-size: 16px; padding: 14px 22px; }
+  #enter:disabled { opacity: .45; cursor: wait; }
+  @media (max-width: 760px) { .videos { grid-template-columns: 1fr; } .hint { display: none; } button { padding: 10px 10px; font-size: 13px; } }
+</style>
+</head>
+<body>
+<div id="intro" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+  <div class="card">
+    <h2 id="intro-title">TRI · Print Studio</h2>
+    <p class="gift">for the kid who learned 3D on the donut tutorial</p>
+    <p>TRI is the idol of <i>I'm Upping My Poly(doom)</i>, a K-pop parody about AI 3D. She is also a real 3D model: one image → Tripo H3.1 → 11,040 native quads → an auto-rig → a dance preset.</p>
+    <p>Every frame here is printed live in your browser, in JavaScript, like a riso zine. Spin her, peel back the quads and the rig, and press dance.</p>
+    <div class="bar" aria-hidden="true"><i id="progress"></i></div>
+    <button id="enter" disabled>Loading…</button>
+  </div>
+</div>
+
+<header>
+  <h1>TRI · <span>Print Studio</span></h1>
+  <p>the idol is a Tripo model · printed live in JavaScript</p>
+</header>
+<div class="stage">
+  <canvas id="c" width="1920" height="1080" aria-label="TRI, a 3D idol printed in riso inks. Drag to turn her."></canvas>
+  <div class="hint">drag to turn · scroll to zoom · 1 2 3 · space</div>
+</div>
+<div class="controls">
+  <div class="group" role="group" aria-label="Layer">
+    <button data-layer="tex" aria-pressed="true">1 Texture</button>
+    <button data-layer="quads" aria-pressed="false">2 Quads</button>
+    <button data-layer="rig" aria-pressed="false">3 Rig</button>
+  </div>
+  <button class="solo dance" id="dance" aria-pressed="false">▶ Dance</button>
+  <div class="group" role="group" aria-label="Print style">
+    <button data-style="fine">A · Fine print</button>
+    <button data-style="cel">B · Clean flat</button>
+  </div>
+  <button class="solo" id="print">⤓ Print this frame</button>
+</div>
+
+<main>
+  <section>
+    <h2>Watch</h2>
+    <div class="videos">
+      <figure>
+        <video controls preload="none" poster="media/mv_poster.jpg" src="media/poly_doom_mv.mp4"></video>
+        <figcaption>I'm Upping My Poly(doom) · 2:55 music video. Every frame drawn in JavaScript as a riso print.</figcaption>
+      </figure>
+      <figure>
+        <video controls preload="none" poster="media/reveal_poster.jpg" src="media/tri_reveal_15s.mp4"></video>
+        <figcaption>The reveal: turntable → native quads → auto-rig → dance.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>How TRI was made</h2>
+    <ol class="pipe">
+      <li><b>01 · Image</b>One clean A-pose front view of TRI (GPT Image 2.5), made from her model sheet.</li>
+      <li><b>02 · Tripo H3.1</b>Image → 3D. A textured model, plus a native quad mesh: 11,176 faces, 11,040 of them quads.</li>
+      <li><b>03 · Auto-rig</b>Tripo rigs her in one call: 41 joints with skin weights, no hand weight painting.</li>
+      <li><b>04 · Retarget</b>Tripo's dance_04 preset, sped up 1.42× so her hips hit every beat at 128 BPM.</li>
+      <li><b>05 · Print</b>The textured model is rendered, then traced into riso ink layers like the rest of the video. The quads and the rig are skinned and printed live, here, in your browser.</li>
+    </ol>
+    <img class="board" src="media/asset_board.jpg" alt="Asset board: TRI's model sheet, turnaround, the Tripo model in texture, quads and rig, and stills from the music video." loading="lazy">
+  </section>
+
+  <section class="credits">
+    <h2>Credits</h2>
+    <p>Made by Matt (<a href="https://x.com/Matt_xingbao">@Matt_xingbao</a>) with Claude Opus 5.5 · 3D by Tripo (H3.1, auto-rig, animation presets) · footage reference Seedance 2.5 · designs GPT Image 2.5 and Nano Banana Pro · song ElevenLabs.</p>
+    <p>Parodies all the way down: "P(doom)" by osmarks · Claude-Pop by @slimer48484 · the Opus music video by @other__reality · the one-prompt remake by @donaldjewkes.</p>
+    <p>Built for Tripothon S1 · Film / VFX.</p>
+  </section>
+</main>
+<script type="module" src="./studio.js"></script>
+</body></html>
