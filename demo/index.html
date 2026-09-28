@@ -50,6 +50,7 @@
   #intro .bar i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .2s; }
   #enter { background: var(--yellow); border: 3px solid var(--ink); font-size: 16px; padding: 14px 22px; }
   #enter:disabled { opacity: .45; cursor: wait; }
+  #toast { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); background: var(--yellow); border: 3px solid var(--ink); padding: 8px 14px; font: 700 14px/1 "JetBrains Mono", monospace; }
   @media (max-width: 760px) { .videos { grid-template-columns: 1fr; } .hint { display: none; } button { padding: 10px 10px; font-size: 13px; } }
 </style>
 </head>
@@ -71,6 +72,7 @@
 </header>
 <div class="stage">
   <canvas id="c" width="1920" height="1080" aria-label="TRI, a 3D idol printed in riso inks. Drag to turn her."></canvas>
+  <div id="toast" role="status" hidden></div>
   <div class="hint">drag to turn · scroll to zoom · 1 2 3 · space</div>
 </div>
 <div class="controls">

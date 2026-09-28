@@ -133,8 +133,9 @@ function tick(nowMs) {
   if (!S.ready) return;
   const dt = Math.min(0.1, (nowMs - (tick.last || nowMs)) / 1000); tick.last = nowMs;
   if (S.dancing && music.ended) setDancing(false);
+  if (toastUntil && nowMs > toastUntil) { $("#toast").hidden = true; toastUntil = 0; }
   if (!S.drag) {
-    if (S.auto && !(S.dancing && S.layer === "tex")) S.yaw += dt * (S.dancing ? 0.2 : 0.35);
+    if (S.auto && S.entered && !(S.dancing && S.layer === "tex")) S.yaw += dt * (S.dancing ? 0.2 : 0.35);   // turntable starts once you are in
     else { S.yaw += S.vyaw * dt; S.vyaw *= Math.pow(0.03, dt); }
     if (!S.auto && !S.dancing && nowMs - S.lastInteract > 7000) S.auto = true;
   }
@@ -205,6 +206,9 @@ const up = (e) => {
 canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); S.zoom = clamp(S.zoom * Math.exp(-e.deltaY * 0.0012), 0.8, 2.4); S.lastInteract = performance.now(); }, { passive: false });
 
+// a small "saved" chip over the stage, gone after 2.4 s (timed on performance.now, like the rest of the page)
+let toastUntil = 0;
+function toast(text) { const el = $("#toast"); el.textContent = text; el.hidden = false; toastUntil = performance.now() + 2400; }
 // print this frame: the current view with a colophon strip, as a PNG
 async function printFrame() {
   S.printing = true;
@@ -220,6 +224,7 @@ async function printFrame() {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tri_print_${S.layer}_${Date.now()}.png`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   lastKey = ""; S.printing = false;
+  toast(`✓ saved ${a.download}`);
 }
 
 // ---- loading ------------------------------------------------------------------------------
@@ -264,8 +269,8 @@ async function boot() {
   S.ready = true;
   if (S.layer !== "tex") document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.layer === S.layer)));
   btn.disabled = false; btn.textContent = "Enter the studio";
-  btn.addEventListener("click", () => { $("#intro").remove(); S.lastInteract = performance.now(); prefetchDance(danceYaw(S.yaw)); }, { once: true });
+  btn.addEventListener("click", () => { $("#intro").remove(); S.entered = true; S.lastInteract = performance.now(); prefetchDance(danceYaw(S.yaw)); }, { once: true });
   requestAnimationFrame(tick);
 }
 boot().catch((e) => { console.error(e); $("#enter").textContent = "Failed to load — see console"; });
-window.STUDIO = { S, render, setLayer, setDancing };
+window.STUDIO = { S, render, setLayer, setDancing, get busy() { return busy; } };
