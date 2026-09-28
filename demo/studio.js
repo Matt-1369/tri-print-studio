@@ -49,9 +49,17 @@ function misreg(seed) {
   return { yellow: m(), pink: m(), blue: m(), red: m(), green: m(), skin: m() };
 }
 // what each layer shows at the current state; yaw snaps to what the printed drawings exist for
+function readySide(yaw) {
+  const k0 = danceYaw(yaw);
+  if (danceReady.has(k0)) return k0;
+  let best = null;
+  for (const k of danceReady) { const dk = Math.min(Math.abs(k - k0), YAWS - Math.abs(k - k0)); if (best === null || dk < best[1]) best = [k, dk]; }
+  return best && best[0];
+}
 function view(layer, d) {
   if (layer === "tex") {
-    if (d.on && danceReady.has(danceYaw(S.yaw))) { const k = danceYaw(S.yaw); return { yaw: k * TAU / YAWS, key: `D${k}.${d.j}` }; }
+    const k = d.on ? readySide(S.yaw) : null;
+    if (k !== null) return { yaw: k * TAU / YAWS, key: `D${k}.${d.j}` };
     const i = turnIndex(S.yaw); return { yaw: TURN.rot(i), key: `T${i}` };
   }
   const y = Math.round(S.yaw * 180 / Math.PI) * Math.PI / 180;
@@ -61,8 +69,8 @@ async function drawLayer(ctx, layer, d, tf, zk) {
   const v = view(layer, d);
   floorGrid(ctx, riso, { cam: CAM, rot: v.yaw, tf, alpha: 0.45 });
   if (layer === "tex") {
-    const live = d.on && danceReady.has(danceYaw(S.yaw));
-    const clip = live ? dance[danceYaw(S.yaw)] : turn, i = live ? d.j : turnIndex(S.yaw);
+    const k = d.on ? readySide(S.yaw) : null, live = k !== null;
+    const clip = live ? dance[k] : turn, i = live ? d.j : turnIndex(S.yaw);
     await clip.draw(ctx, riso, i / 12 + 1e-4, { tf, inkmap: TRI_INKMAP, outline: 3.4, misreg: misreg(i) });
     return;
   }
@@ -218,6 +226,12 @@ async function printFrame() {
 async function pool(items, n, fn) { let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) await fn(items[i++]); })); }
 // dance drawings stream in side by side: the side you are looking at first, then outward from it
 const danceReady = new Set();
+// all drawings of a clip: one bundle request (all.json, gzip) when the build has one, else file by file
+async function loadDrawings(roto, n, onEach = () => {}) {
+  const r = await fetch(roto.base + "/all.json").catch(() => null);
+  if (r && r.ok) { (await r.json()).forEach((d, i) => roto.cache.set(i, d)); for (let i = 0; i < n; i++) onEach(); return; }
+  await pool([...Array(n).keys()], 8, async (i) => { await roto.get(i); onEach(); });
+}
 let queue = [], loading = false;
 function prefetchDance(k0) {
   const dist = (a) => Math.min(Math.abs(a - k0), YAWS - Math.abs(a - k0));
@@ -229,7 +243,7 @@ async function pump() {
   while (queue.length) {
     const k = queue.shift();
     if (danceReady.has(k)) continue;
-    try { await dance[k].load(); await pool([...Array(DEMO.frames).keys()], 8, (i) => dance[k].get(i)); danceReady.add(k); } catch (e) { console.warn("dance side", k, e); }
+    try { await dance[k].load(); await loadDrawings(dance[k], DEMO.frames); danceReady.add(k); } catch (e) { console.warn("dance side", k, e); }
   }
   loading = false;
 }
@@ -237,7 +251,8 @@ async function boot() {
   const bar = $("#progress"), btn = $("#enter");
   let done = 0; const total = 96 + 4, step = () => { bar.style.width = `${Math.round(++done / total * 100)}%`; };
   await Promise.all([loadFonts("../engine/fonts").then(step), loadTri(["d04"], "h31").then(() => loadChoreo("h31")).then(step), turn.load().then(step)]); step();
-  await pool([...Array(96).keys()], 8, async (i) => { await turn.get(i); step(); });
+  await loadDrawings(turn, 96, step);
+  prefetchDance(danceYaw(S.yaw));      // stream every dance side in the background from the start
   wire = new TriGL();
   // warm-up behind the loading screen: the first routine pose binds every animation track (~0.8 s) and the first
   // WebGL passes compile their shaders; doing it here keeps the first press of Dance instant
