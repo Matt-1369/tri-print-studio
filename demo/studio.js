@@ -12,11 +12,11 @@ import { TriGL } from "../engine/js/triGL.js";
 
 const CAM = TRI_JOBS.TRI_TURN.cam, TURN = TRI_JOBS.TRI_TURN;
 const BEAT = 60 / 128.02, LOOP = DEMO_LOOP.beats * BEAT;
-const DOWNBEAT = 153.868 - 153.0;          // first downbeat of the final chorus inside the music clip
+const DOWNBEAT = 0;                        // the music clip starts on a downbeat (song 151.993, the bar before the final chorus)
 const YAWS = DEMO_LOOP.yaws, TAU = Math.PI * 2;
 const canvas = document.getElementById("c"), g = canvas.getContext("2d");
 const riso = new Riso();
-const music = new Audio("../song/demo_chorus_153_172.mp3");
+const music = new Audio("../song/demo_chorus_152_172.m4a");
 music.preload = "auto";
 
 const turn = new Roto("../build/roto_hq/H31_TURN");
@@ -122,7 +122,7 @@ function tick(nowMs) {
   const dt = Math.min(0.1, (nowMs - (tick.last || nowMs)) / 1000); tick.last = nowMs;
   if (S.dancing && music.ended) setDancing(false);
   if (!S.drag) {
-    if (S.auto && !S.dancing) S.yaw += dt * 0.35;
+    if (S.auto && !(S.dancing && S.layer === "tex")) S.yaw += dt * (S.dancing ? 0.2 : 0.35);
     else { S.yaw += S.vyaw * dt; S.vyaw *= Math.pow(0.03, dt); }
     if (!S.auto && !S.dancing && nowMs - S.lastInteract > 7000) S.auto = true;
   }
@@ -145,7 +145,7 @@ function setDancing(on) {
   $("#dance").setAttribute("aria-pressed", String(on));
   $("#dance").textContent = on ? "■ Stop" : "▶ Dance";
   if (on) {
-    S.auto = false; S.vyaw = 0;
+    S.vyaw = 0;
     prefetchDance(danceYaw(S.yaw));
     music.currentTime = 0; music.play().catch(() => setDancing(false));
   } else { music.pause(); }
@@ -212,16 +212,22 @@ async function printFrame() {
 
 // ---- loading ------------------------------------------------------------------------------
 async function pool(items, n, fn) { let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) await fn(items[i++]); })); }
-// dance drawings stream in on demand, nearest side first; a side is only used once its drawings are in
-const fetched = new Set(), danceReady = new Set();
+// dance drawings stream in side by side: the side you are looking at first, then outward from it
+const danceReady = new Set();
+let queue = [], loading = false;
 function prefetchDance(k0) {
   const dist = (a) => Math.min(Math.abs(a - k0), YAWS - Math.abs(a - k0));
-  for (const k of [...Array(YAWS).keys()].sort((a, b) => dist(a) - dist(b))) {
-    if (fetched.has(k)) continue;
-    fetched.add(k);
-    dance[k].load().then(() => pool([...Array(DEMO_LOOP.frames).keys()], 6, (i) => dance[k].get(i)))
-      .then(() => danceReady.add(k)).catch(() => fetched.delete(k));
+  queue = [...Array(YAWS).keys()].filter((k) => !danceReady.has(k)).sort((a, b) => dist(a) - dist(b));
+  if (!loading) pump();
+}
+async function pump() {
+  loading = true;
+  while (queue.length) {
+    const k = queue.shift();
+    if (danceReady.has(k)) continue;
+    try { await dance[k].load(); await pool([...Array(DEMO_LOOP.frames).keys()], 8, (i) => dance[k].get(i)); danceReady.add(k); } catch (e) { console.warn("dance side", k, e); }
   }
+  loading = false;
 }
 async function boot() {
   const bar = $("#progress"), btn = $("#enter");
