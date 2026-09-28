@@ -1,19 +1,20 @@
 // studio.js: TRI · Print Studio. The Tripo H3.1 model of TRI printed live in the browser: a traced turntable
-// (texture), the native quad wire and the Tripo auto-rig skinned with three.js, and a 12-beat dance loop on the song.
+// (texture), the native quad wire and the Tripo auto-rig skinned with three.js, and a 40-beat routine cut from four
+// Tripo dance presets on the final chorus.
 // Reuses the MV engine (engine/js): riso inks, roto drawings, the shared cameras in tri_cam.js and tri3d.js.
 import { W, H, STYLE, clamp, lerp, ease, rng } from "../engine/js/core.js";
 import { Riso, INK, LOOK } from "../engine/js/riso.js";
 import { Roto } from "../engine/js/roto.js";
 import { loadFonts, FONTS, inkText } from "../engine/js/type.js";
 import { camTf, tag } from "../engine/js/fx.js";
-import { TRI_JOBS, DEMO_LOOP } from "../engine/js/tri_cam.js";
-import { TRI, TRI_INKMAP, loadTri, triPose, printSkeleton, floorGrid, fmt } from "../engine/js/tri3d.js";
+import { TRI_JOBS, DEMO, BEAT, CHOREO, choreoAt } from "../engine/js/tri_cam.js";
+import { TRI, TRI_INKMAP, loadTri, loadChoreo, triPose, triPoseChoreo, printSkeleton, floorGrid, fmt } from "../engine/js/tri3d.js";
 import { TriGL } from "../engine/js/triGL.js";
 
 const CAM = TRI_JOBS.TRI_TURN.cam, TURN = TRI_JOBS.TRI_TURN;
-const BEAT = 60 / 128.02, LOOP = DEMO_LOOP.beats * BEAT;
+const LOOP = CHOREO.beats * BEAT;           // the 40-beat routine (tri_cam.js CHOREO), 225 drawings at 12 fps
 const DOWNBEAT = 0;                        // the music clip starts on a downbeat (song 151.993, the bar before the final chorus)
-const YAWS = DEMO_LOOP.yaws, TAU = Math.PI * 2;
+const YAWS = DEMO.yaws, TAU = Math.PI * 2;
 const canvas = document.getElementById("c"), g = canvas.getContext("2d");
 const riso = new Riso();
 const music = new Audio("../song/demo_chorus_152_172.m4a");
@@ -38,8 +39,8 @@ function danceState() {
   if (!S.dancing) return { on: false, pulse: 0 };
   const at = music.currentTime - DOWNBEAT;
   if (at < 0) return { on: false, pulse: 0 };
-  const tau = at % LOOP, j = Math.min(DEMO_LOOP.frames - 1, Math.floor(tau * 12 + 1e-6));
-  return { on: true, j, anim: DEMO_LOOP.t0 + j / 12 * DEMO_LOOP.speed, pulse: Math.exp(-(at % BEAT) / 0.12) };
+  const tau = at % LOOP, j = Math.min(DEMO.frames - 1, Math.floor(tau * 12 + 1e-6));
+  return { on: true, j, beat: j / 12 / BEAT, pulse: Math.exp(-(at % BEAT) / 0.12) };
 }
 
 // ---- drawing ------------------------------------------------------------------------------
@@ -65,7 +66,7 @@ async function drawLayer(ctx, layer, d, tf, zk) {
     await clip.draw(ctx, riso, i / 12 + 1e-4, { tf, inkmap: TRI_INKMAP, outline: 3.4, misreg: misreg(i) });
     return;
   }
-  const pose = d.on ? triPose("d04", d.anim) : triPose();
+  const pose = d.on ? triPoseChoreo(d.beat) : triPose();
   wire.print(ctx, riso, pose, { cam: CAM, rot: v.yaw, tf, width: lerp(0.9, 1.3, zk), alpha: layer === "rig" ? 0.45 : 1, bands: [0, 0.06, 0.16, 0.3] });
   if (layer === "rig") printSkeleton(ctx, riso, pose.bones, { cam: CAM, rot: v.yaw, tf, scale: lerp(1, 1.3, zk) });
 }
@@ -81,7 +82,10 @@ function hud(ctx, d) {
   }
   const cap = { tex: "TEXTURED 3D MODEL · TRIPO H3.1", quads: `${fmt(s.quads)} NATIVE QUADS · ${Math.round(s.quads / s.faces * 100)}%`, rig: `AUTO-RIG · ${s.joints} JOINTS` }[layer];
   tag(ctx, riso, cap, 70, H - 70, { bg: INK.yellow, size: 32 });
-  if (S.dancing) tag(ctx, riso, "DANCE_04 · RETARGETED ♪", 1400, 90, { bg: INK.pink, ink: INK.paper, size: 32 });
+  if (d.on) {   // the preset carrying the most weight right now
+    const top = choreoAt(d.beat).mix.reduce((a, b) => (b.w > a.w ? b : a));
+    tag(ctx, riso, `DANCE_${top.clip.slice(1)} · RETARGETED ♪`, 1400, 90, { bg: INK.pink, ink: INK.paper, size: 32 });
+  }
 }
 function vignette(ctx) {
   ctx.save();
@@ -225,16 +229,23 @@ async function pump() {
   while (queue.length) {
     const k = queue.shift();
     if (danceReady.has(k)) continue;
-    try { await dance[k].load(); await pool([...Array(DEMO_LOOP.frames).keys()], 8, (i) => dance[k].get(i)); danceReady.add(k); } catch (e) { console.warn("dance side", k, e); }
+    try { await dance[k].load(); await pool([...Array(DEMO.frames).keys()], 8, (i) => dance[k].get(i)); danceReady.add(k); } catch (e) { console.warn("dance side", k, e); }
   }
   loading = false;
 }
 async function boot() {
   const bar = $("#progress"), btn = $("#enter");
   let done = 0; const total = 96 + 4, step = () => { bar.style.width = `${Math.round(++done / total * 100)}%`; };
-  await Promise.all([loadFonts("../engine/fonts").then(step), loadTri(["d04"], "h31").then(step), turn.load().then(step)]); step();
+  await Promise.all([loadFonts("../engine/fonts").then(step), loadTri(["d04"], "h31").then(() => loadChoreo("h31")).then(step), turn.load().then(step)]); step();
   await pool([...Array(96).keys()], 8, async (i) => { await turn.get(i); step(); });
   wire = new TriGL();
+  // warm-up behind the loading screen: the first routine pose binds every animation track (~0.8 s) and the first
+  // WebGL passes compile their shaders; doing it here keeps the first press of Dance instant
+  const warm = document.createElement("canvas"); warm.width = W; warm.height = H;
+  const wg = warm.getContext("2d"), wtf = camTf(1, 640, 380);
+  wire.print(wg, riso, triPoseChoreo(0), { cam: CAM, rot: 0, tf: wtf });
+  printSkeleton(wg, riso, triPoseChoreo(20).bones, { cam: CAM, rot: 0, tf: wtf });
+  triPose();
   S.ready = true;
   if (S.layer !== "tex") document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.layer === S.layer)));
   btn.disabled = false; btn.textContent = "Enter the studio";

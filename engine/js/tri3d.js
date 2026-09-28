@@ -7,7 +7,7 @@ import { GLTFLoader } from "../vendor/GLTFLoader.js";
 import { W, H, clamp } from "./core.js";
 import { INK } from "./riso.js";
 import { printMeshSolid } from "./mesh3d.js";
-import { camBasis, projectSrc, rotPoint } from "./tri_cam.js";
+import { camBasis, projectSrc, rotPoint, CHOREO, CHOREO_CLIPS, choreoAt, choreoActions, applyChoreo } from "./tri_cam.js";
 
 export const FRONT = -Math.PI / 2;  // Tripo exports face +X
 // ink overrides for the traced renders of the model: its magenta (laces, donut, nails) classifies as red
@@ -40,6 +40,15 @@ export async function loadTri(anims = ["d04", "idle"], model = TRI_MODEL) {
   TRI.parents = bones.map((b) => bones.indexOf(b.parent));
   TRI.ready = true;
 }
+// the demo routine (tri_cam.js CHOREO) on the quad rig: clips of the other presets from their retarget GLBs,
+// mixed by a second mixer on the d04 rig so triPose("d04", t) for the MV keeps working untouched
+export async function loadChoreo(model = TRI_MODEL) {
+  const r = TRI.rigs.d04, loader = new GLTFLoader(), clips = { d04: r.clip };
+  await Promise.all(CHOREO_CLIPS.filter((c) => c !== "d04").map(async (c) => { clips[c] = (await loader.loadAsync(BASE + `${model}_quad_${c}.glb`)).animations[0]; }));
+  CHOREO.roots = await (await fetch(BASE + `${model}_dance_roots.json`)).json();
+  const mixer = new THREE.AnimationMixer(r.scene);
+  TRI.choreo = { mixer, actions: choreoActions(mixer, clips) };
+}
 const toModel = (v) => { const { s, o } = TRI.norm; return rotPoint([v.x * s + o[0], v.y * s + o[1], v.z * s + o[2]], FRONT); };
 
 // vertices + joints in model space. anim = rig key ("d04", "idle") and its clip time, or null for the bind pose
@@ -57,6 +66,21 @@ export function triPose(anim = null, t = 0) {
     return toModel(_v.applyMatrix4(mw));
   });
   const bones = k.mesh.skeleton.bones.map((b) => toModel(b.getWorldPosition(_v)));
+  const out = { v, bones };
+  cache.set(key, out); if (cache.size > 6) cache.delete(cache.keys().next().value);
+  return out;
+}
+
+// the routine at a beat (0 = first downbeat of the demo music): vertices + joints in model space, re-centred
+export function triPoseChoreo(beat) {
+  const key = `C|${beat.toFixed(4)}`;
+  if (cache.has(key)) return cache.get(key);
+  const { mix, off } = choreoAt(beat), k = TRI.rigs.d04;
+  applyChoreo(TRI.choreo.actions, TRI.choreo.mixer, mix);
+  k.scene.updateMatrixWorld(true);
+  const mw = k.mesh.matrixWorld, shift = (p) => { p[0] += off[0]; p[2] += off[1]; return p; };
+  const v = TRI.map.map((gi) => shift(toModel(k.mesh.getVertexPosition(gi, _v).applyMatrix4(mw))));
+  const bones = k.mesh.skeleton.bones.map((b) => shift(toModel(b.getWorldPosition(_v))));
   const out = { v, bones };
   cache.set(key, out); if (cache.size > 6) cache.delete(cache.keys().next().value);
   return out;
